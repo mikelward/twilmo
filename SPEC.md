@@ -495,17 +495,23 @@ entry, so the app never ships holding a permission it doesn't use.
 ## Distribution and versioning
 
 - Application ID **`app.twilmo`** (maintainer, 2026-08-02), with simmo's
-  `.debug` (CI tester) / `.dev` (local build) suffix scheme.
+  suffix scheme on the **debug build type**: `.debug` for the CI tester
+  build, `.dev` for a local debug build, so the two co-install cleanly.
+  Release builds keep the production ID everywhere — a local release build
+  exists for R8/build inspection (unsigned without the Play keystore, so not
+  installable) and wears the Dev launcher identity as a warning label; the
+  artifacts that ship are CI-built.
 - `versionCode` = `git rev-list --count HEAD`; `versionName` =
   `"<base>.<count>+<shortSha>"`, both derived at configure time in
   `app/build.gradle.kts`, matching the sibling repos. The base is `0.1` until
   the MVP ships — pre-1.0 is deliberate for an app that hasn't reached its
   first release.
-- CI (`.github/workflows/android-ci.yml`, landing with the scaffold milestone)
-  builds and unit-tests every PR, records screenshots, and on `main` runs the
-  sibling repos' release pipeline; commit subjects become the release "What's
-  new" (`AGENTS.md` *Commit messages*). All distribution steps are secret-gated
-  and no-op on forks.
+- CI (`.github/workflows/android-ci.yml`) builds, unit-tests, and lints every
+  PR and records screenshots. The sibling repos' release pipeline —
+  Firebase/Play distribution on pushes to `main`, commit subjects becoming
+  the release "What's new" (`AGENTS.md` *Commit messages*), every
+  distribution step secret-gated and no-op on forks — lands with Phase 5's
+  Play wiring, once the accounts exist to gate on (`TODO.md`).
 
 ## Testing strategy
 
