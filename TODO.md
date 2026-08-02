@@ -13,13 +13,19 @@ green.
 
 ## Phase 0b — Project scaffold
 
-- [ ] Gradle + AGP + Compose skeleton (`:app`, application ID `app.twilmo`),
+- [x] Gradle + AGP + Compose skeleton (`:app`, application ID `app.twilmo`),
       buildable in CI, `versionCode` from `git rev-list --count HEAD`.
-- [ ] CI workflow (`android-ci.yml`): build, unit tests (failure comments on
-      PRs), lint, screenshot job — mirrored from simmo, release steps
-      secret-gated.
-- [ ] Build identity: `.debug` (CI tester) / `.dev` (local) application ID
-      suffixes and badged launcher icons, per the sibling convention.
+- [x] CI workflow (`android-ci.yml`): build, unit tests (failure comments on
+      PRs), lint, screenshot job — mirrored from simmo. The deploy job
+      (Firebase App Distribution + Play internal track, secret-gated) lands
+      with Phase 5's Play wiring, once the accounts exist to gate on.
+- [x] Build identity: debug-build application ID suffixes (`.debug` CI
+      tester / `.dev` local) and launcher variants, per the sibling
+      convention; release keeps the production ID everywhere (see
+      *Decisions needing review* on the icon treatment).
+- [x] First domain unit with tests: `tel:` URI number extraction for the
+      hand-off contract (scheme case, `%2B`, separators, RFC 3966 params,
+      refusal cases).
 
 ## Phase 1 — Twilio side and backend
 
@@ -158,6 +164,18 @@ Guesses made while drafting the skeleton, each cheap to change:
   alternative was a Worker/Cloud Run function. Reversible until Phase 1 lands.
 - **Codex is named as the automated reviewer** in `AGENTS.md`, following simmo
   (phomo uses Copilot). One-line change if wrong.
+- **Launcher identity is color-coded, not letter-badged** (scaffold): one
+  handset glyph on teal (Play) / amber (dev) / dark slate (CI tester)
+  backgrounds, instead of simmo's lettered DEBUG/DEV badge bars. Simpler to
+  land, same tell-them-apart job; swapping in badge-bar vectors later touches
+  only the drawable layer. The glyph itself is a stock Material handset — a
+  real brand mark can replace it any time.
+- **Scaffold dependency set is minimal**: no DataStore, serialization,
+  libphonenumber, or Firebase yet — each arrives with the phase that first
+  uses it, so the tree never carries an unexercised dependency.
+- **CI deploy job deferred to Phase 5** (see Phase 0b): mirroring simmo's
+  Firebase/Play pipeline before those accounts exist would ship 500 untested
+  workflow lines; the build/test/lint/screenshot jobs land now.
 
 Resolved (maintainer, 2026-08-02): Twilmo is a second line only — Simmo owns
 redirection, and Twilmo integrates as a calling line: a call-provider phone

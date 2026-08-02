@@ -1,0 +1,297 @@
+name: Android CI
+
+# Mirror of simmo's android-ci.yml, minus the deploy job: build + unit tests +
+# lint, plus the screenshot job (records Roborazzi snapshots, commits drift
+# back to same-repo PR branches, posts a visual diff comment). The deploy job
+# (Firebase App Distribution + Play internal track, release notes built from
+# commit subjects) lands once the Play/Firebase side exists — see TODO.md.
+
+on:
+  pull_request:
+    # Skip CI when every changed path is housekeeping with no effect on the
+    # app build: markdown docs, or root dotfiles/dotdirs — with
+    # `.github/workflows/**` re-included so workflow edits validate
+    # themselves. `paths` is an allow-list: patterns apply in order, last
+    # match wins per file; a push runs when at least one changed file
+    # survives as included.
+    paths:
+      - '**'
+      - '!**/*.md'
+      - '!.*'
+      - '!.*/**'
+      - '.github/workflows/**'
+  push:
+    branches:
+      - main
+    paths:
+      - '**'
+      - '!**/*.md'
+      - '!.*'
+      - '!.*/**'
+      - '.github/workflows/**'
+
+jobs:
+  build:
+    name: Build and unit test
+    runs-on: ubuntu-latest
+    # Fail fast if a test deadlocks instead of burning the 6-hour default.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Used by "Print failing test details" to post a comment on the
+      # originating PR when `./gradlew test` fails.
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        with:
+          fetch-depth: 0
+          # Don't leave the job's (pull-requests: write) token in .git/config
+          # while Gradle runs PR-controlled build code; the one step that
+          # posts to the PR gets the token via its own env instead.
+          persist-credentials: false
+
+      - name: Set up JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2  # v5
+        with:
+          # A malicious PR commit can poison its own branch's cache; lock PRs
+          # to read-only so only main pushes write the shared cache.
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Build debug APK (runs R8 in CI)
+        # assembleDebug in CI runs the same shrink-only R8 a shipping build
+        # uses (isMinifyEnabled = isCiBuild), so a broken keep rule or R8
+        # failure fails the PR here instead of reaching a device. Falls
+        # through to AGP's auto debug key — no keystore secret needed to
+        # validate the build.
+        run: ./gradlew assembleDebug
+
+      - name: Run unit tests
+        run: ./gradlew test
+
+      - name: Print failing test details
+        # When `gradlew test` fails the JUnit XML still contains the failure
+        # messages and stack traces. Dump them to the job log AND, on a PR
+        # build, post them as a PR comment so the same data is reachable
+        # without opening the job log or unzipping the artifact.
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          JOB_NAME: ${{ github.job }}
+        run: |
+          shopt -s nullglob globstar
+          summary=""
+          for xml in app/build/test-results/**/TEST-*.xml; do
+            if grep -q "<\(failure\|error\)" "$xml"; then
+              echo "::group::$xml"
+              cat "$xml"
+              echo "::endgroup::"
+              summary+=$'\n\n'"### \`$xml\`"$'\n```xml\n'"$(cat "$xml")"$'\n```'
+            fi
+          done
+          if [ -n "$PR_NUMBER" ] && [ -n "$summary" ]; then
+            body=$'<!-- ci-failure -->'$'\n'"**${JOB_NAME} failed.** Failing test reports:"$'\n'"$summary"
+            curl -sS -X POST \
+              -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              -d "$(jq -n --arg body "$body" '{body:$body}')" > /dev/null
+          fi
+
+      - name: Upload unit test reports
+        # Always upload so a failed run leaves the JUnit XMLs and HTML
+        # reports for inspection.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: unit-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Run lint
+        run: ./gradlew lint
+
+  screenshot-tests:
+    name: Screenshot tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # Write so "Commit refreshed screenshots" can push regenerated snapshot
+      # PNGs back to a same-repo PR branch, and so "Post screenshot diffs"
+      # can upsert its PR comment.
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        with:
+          fetch-depth: 0
+          # Same-repo PRs check out the head *branch* (not refs/pull/N/merge)
+          # so the refresh step below can push to it; the build job still runs
+          # these tests' assertions on the merge ref.
+          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || '' }}
+          # Don't leave the write-scoped token in .git/config while Gradle
+          # runs PR-controlled build code; the push step gets it via env.
+          persist-credentials: false
+
+      - name: Set up JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2  # v5
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Clear committed snapshots before recording
+        # Recording only overwrites files the suites still produce; starting
+        # from empty means removed tests surface as deletions in the refresh
+        # commit instead of stale PNGs living forever.
+        run: |
+          rm -rf app/src/test/snapshots/images
+          mkdir -p app/src/test/snapshots/images
+
+      # One step per screenshot class: the record run is an explicit
+      # allow-list, so a new *ScreenshotTest class must be added here or it
+      # never records in CI even when it passes locally (AGENTS.md "Testing
+      # expectations").
+      - name: Run home screenshot tests
+        run: ./gradlew :app:testDebugUnitTest --tests "app.twilmo.ui.HomeScreenshotTest" -Proborazzi.test.record=true
+
+      - name: Print failing test details
+        if: failure()
+        run: |
+          shopt -s nullglob globstar
+          for xml in app/build/test-results/**/TEST-*.xml; do
+            if grep -q "<\(failure\|error\)" "$xml"; then
+              echo "::group::$xml"
+              cat "$xml"
+              echo "::endgroup::"
+            fi
+          done
+
+      - name: Fail on screenshot drift when a refresh cannot be pushed
+        # Fork PRs and pushes to main can't receive a refresh commit, so
+        # recording drift must fail the job loudly there instead of hiding in
+        # the artifact under a green check.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          if [ -n "$(git status --porcelain -- app/src/test/snapshots/images)" ]; then
+            git status --porcelain -- app/src/test/snapshots/images
+            echo "::error::Recorded screenshots differ from the committed ones; re-record and commit them."
+            exit 1
+          fi
+
+      - name: Commit refreshed screenshots
+        # Keeps the committed snapshots identical to what this runner renders;
+        # subject prefixed ci: so release notes skip it. Same-repo PRs only.
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(git log -1 --pretty=%s)" = "ci: refresh recorded screenshots" ]; then
+            echo "Head commit is already a screenshot refresh; skipping."
+            exit 0
+          fi
+          if [ -z "$(git status --porcelain -- app/src/test/snapshots/images)" ]; then
+            echo "Recorded screenshots match the committed ones; nothing to do."
+            exit 0
+          fi
+          git status --porcelain -- app/src/test/snapshots/images
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/test/snapshots/images
+          git commit -m "ci: refresh recorded screenshots"
+          push_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if ! git push "$push_url" "HEAD:${GITHUB_HEAD_REF}"; then
+            echo "::warning::Screenshot refresh push failed (branch gone or moved); the next run will retry."
+            exit 0
+          fi
+
+      - name: Post screenshot diffs as a PR comment
+        # Convenience comment with before/after embeds pinned to commit SHAs;
+        # never gates the job. Embeds go through github.com/<repo>/raw/<sha>/…
+        # rather than raw.githubusercontent.com: that CDN origin never sees a
+        # github.com session cookie, so every embed 404s once the repo is
+        # private. The github.com path authorizes the viewer and redirects to
+        # a tokenized image URL. Each caption also links to the PR's own image
+        # diff, which GitHub renders side by side for anyone with repo access.
+        continue-on-error: true
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          BASE_SHA=$(git merge-base HEAD "origin/${GITHUB_BASE_REF}")
+          HEAD_SHA=$(git rev-parse HEAD)
+          mapfile -t entries < <(git diff --name-status "$BASE_SHA" HEAD -- app/src/test/snapshots/images/ | grep -E '^[AM]' || true)
+          if [ ${#entries[@]} -eq 0 ]; then
+            echo "No added or changed screenshots vs merge-base; skipping comment."
+            exit 0
+          fi
+          raw="https://github.com/${GITHUB_REPOSITORY}/raw"
+          files="https://github.com/${GITHUB_REPOSITORY}/pull/${PR_NUMBER}/files"
+          body="<!-- screenshot-diff -->"$'\n'"## Screenshot diffs"$'\n\n'"Auto-posted by CI. Images pinned to \`${HEAD_SHA:0:7}\`; each caption opens the diff."$'\n'
+          count=0
+          for entry in "${entries[@]}"; do
+            status="${entry%%$'\t'*}"
+            path="${entry#*$'\t'}"
+            name=$(basename "$path")
+            # GitHub anchors a file in the Files changed tab by the sha256 of its path.
+            anchor=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)
+            count=$((count+1))
+            if [ "$count" -gt 20 ]; then
+              body+=$'\n'"_…truncated: more than 20 added/changed screenshots._"
+              break
+            fi
+            if [ "$status" = "A" ]; then
+              body+=$'\n'"**Added — [\`${name}\`](${files}#diff-${anchor})**"$'\n\n'"<img src=\"${raw}/${HEAD_SHA}/${path}\" width=\"320\">"$'\n'
+            else
+              body+=$'\n'"**Changed — [\`${name}\`](${files}#diff-${anchor})**"$'\n\n'"| Before | After |"$'\n'"| --- | --- |"$'\n'"| <img src=\"${raw}/${BASE_SHA}/${path}\" width=\"320\"> | <img src=\"${raw}/${HEAD_SHA}/${path}\" width=\"320\"> |"$'\n'
+            fi
+          done
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          existing=$(curl -sS \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "${api}/issues/${PR_NUMBER}/comments?per_page=100" \
+            | jq -r '[.[] | select(.body | startswith("<!-- screenshot-diff -->"))][0].id // empty')
+          payload=$(jq -n --arg body "$body" '{body:$body}')
+          if [ -n "$existing" ]; then
+            curl -sS -X PATCH -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "${api}/issues/comments/${existing}" -d "$payload" > /dev/null
+          else
+            curl -sS -X POST -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "${api}/issues/${PR_NUMBER}/comments" -d "$payload" > /dev/null
+          fi
+
+      - name: Upload Roborazzi screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: roborazzi-screenshots
+          path: app/src/test/snapshots/images/
+
+      - name: Upload screenshot test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: screenshot-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 1

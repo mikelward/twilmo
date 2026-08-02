@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- android:icon resolves to one of ic_launcher / ic_launcher_dev /
+         ic_launcher_debug at manifest-merge time, so whichever two the variant
+         being analyzed didn't pick look unreferenced to lint. Which one is
+         "unused" also flips with the CI environment variable, so the report is
+         not stable enough to baseline. Scoped to the launcher mipmaps by name:
+         every other unused resource still gets reported. -->
+    <issue id="UnusedResources">
+        <ignore regexp="R\.mipmap\.ic_launcher(_dev|_debug)?\b" />
+    </issue>
+</lint>
