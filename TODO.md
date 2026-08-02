@@ -46,11 +46,21 @@ green.
       backup-excluded. Setup screen, plus the restore path: detect the missing
       secret after a restore and ask for exactly that one field with the
       reason stated.
-- [ ] Token client: keep a valid token ready ahead of dialing (cache +
-      opportunistic refresh; exact policy chosen at implementation time within
-      the battery model), mint on demand as the fallback; explicit failure
-      surfacing (no network, bad secret, endpoint down with no cached token →
-      reason shown at dial time). Cache/refresh logic unit-tested.
+- [x] Token readiness policy (pure Kotlin, unit-tested): at dial time a
+      fresh cache connects immediately, an aging cache connects and starts a
+      background refresh, and no comfortably valid cache means mint-now with
+      the dial waiting — keeping a thin-but-unexpired token as the last
+      resort if the mint fails (a call on a thin token beats no call);
+      cached tokens are bound to the credential set that minted them, so a
+      credentials change orphans the old cache everywhere; opportunistic
+      warm-up refresh only when the cache is thin (battery model: refreshes
+      ride moments the app is already awake); the credential is never
+      printable via toString.
+- [ ] Token client around the policy: fetch/mint against the access-token
+      endpoint, cache storage, and explicit failure surfacing (no network,
+      bad secret, endpoint down with no cached token → reason shown at dial
+      time), wired to the call state machine's token request; failure
+      mapping unit-tested.
 - [x] Call state machine (pure Kotlin, table-tested): dial → token →
       connect → ringing → connected → disconnected, with every failure edge
       explicit, exactly one reported outcome per call, unexpected events
