@@ -51,8 +51,15 @@ green.
       the battery model), mint on demand as the fallback; explicit failure
       surfacing (no network, bad secret, endpoint down with no cached token →
       reason shown at dial time). Cache/refresh logic unit-tested.
-- [ ] Call state machine (pure Kotlin, table-tested) driving the Twilio Voice
-      SDK: connect, ringing, connected, disconnected, every failure edge.
+- [x] Call state machine (pure Kotlin, table-tested): dial → token →
+      connect → ringing → connected → disconnected, with every failure edge
+      explicit, exactly one reported outcome per call, unexpected events
+      logged rather than swallowed, and no phone number in the machine so
+      its state is freely loggable.
+- [ ] Drive the Twilio Voice SDK from the call state machine (arrives with
+      the SDK dependency): map SDK callbacks to events and effects to SDK
+      calls, with the driver supplying the number and token the machine
+      deliberately never holds.
 - [ ] Telecom integration, line model first (SPEC → *Telecom integration*):
       register a `CAPABILITY_CALL_PROVIDER` phone account + `ConnectionService`
       so Twilmo is a calling line the stock dialer (and Simmo's phone-account
