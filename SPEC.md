@@ -23,10 +23,15 @@ audio like a real phone call, because to the Telecom framework it is one.
 
 ## Product shape
 
-- **A second phone line.** Twilmo gives the phone a Twilio number that can both
-  place and receive calls, alongside the SIM. The SIM keeps being the primary
-  line; Twilmo never interferes with SIM calls, and an incoming cellular call
-  always wins any contention for the audio route.
+- **A second phone line — and only that** (maintainer, 2026-08-02). Twilmo gives
+  the phone a Twilio number that can both place and receive calls, alongside the
+  SIM. The SIM keeps being the primary line; Twilmo never interferes with SIM
+  calls, and an incoming cellular call always wins any contention for the audio
+  route. Twilmo does **not** take the call-redirection role or classify numbers
+  dialed in the stock dialer — that is Simmo's job (`mikelward/simmo`), and the
+  division of labor is deliberate: Simmo decides *where* a dialed call should
+  go; Twilmo is one of the places it can send it, via the hand-off intent
+  contract below.
 - **Reliability and battery are the twin constraints, and they rank in that
   order.** The phone must ring when the Twilio number is called — promptly, and
   every time the platform allows — and the app must cost effectively nothing
@@ -94,12 +99,25 @@ out.
   needs a network path held open between calls.
 - **What must stay fresh is the push token — and, rarely, the binding itself.**
   Registration is re-run at three event triggers: **app start**, **`onNewToken`**
-  (FCM rotated the token), and **credentials changed** — plus one **rare
-  scheduled renewal** (on the order of monthly) whose only job is to keep the
-  binding from aging out of Twilio's ~1-year TTL on a phone whose owner never
-  opens the app. A stale token or an expired binding is a phone that silently
-  stops ringing — the app's worst failure mode — so both are tested correctness
-  surfaces, not code paths. **Network change is deliberately not a trigger**: it
+  (FCM rotated the token), and **credentials changed** — plus an **occasional
+  scheduled renewal** whose only job is to keep the binding from aging out of
+  Twilio's ~1-year TTL on a phone whose owner never
+  opens the app — its cadence and scheduler are the implementation's choice,
+  bounded by the battery model. A stale token or an expired binding is a phone
+  that silently stops ringing — the app's worst failure mode — so both are
+  tested correctness surfaces, not code paths. **A credentials change that
+  replaces the identity *or* the registration authority unregisters the old
+  binding before registering the new one.** `Voice.register` against new
+  credentials does not remove the previous binding — and that holds even when
+  the identity string is unchanged, if the Twilio account or endpoint behind
+  it changed — so the old number could keep ringing this phone until its TTL
+  lapses. Unregistering needs more than the old identity + FCM token —
+  `Voice.unregister` authenticates with an access token *for that identity,
+  minted by the old authority* — so the switch completes the old binding's
+  unregister (minting against the old configuration where needed) **before**
+  the old auth configuration is discarded. Where that's impossible — the old
+  backend is already gone — the leftover binding is surfaced to the user, not
+  silently accepted. The switch path is unit-tested like the other triggers. **Network change is deliberately not a trigger**: it
   would need a standing `ConnectivityManager` callback (banned by the battery
   model), it fires constantly on the move, and Play services already re-homes
   the FCM socket for every app at once (`PUSH.md` §4).
@@ -118,7 +136,11 @@ out.
   a demoted push cannot wake a call. Therefore: every push ends in something
   visible (ring, missed-call notice, or a stated failure); no speculative or
   silent pushes ever; the handler checks the delivered priority before doing
-  call work. Duplicate deliveries are deduped on the call's identifier.
+  call work. Duplicate deliveries are deduped on **call identifier plus event
+  type** — a cancel push carries the same identifier as its invite, so
+  identifier-only dedupe would swallow the cancellation and leave a ghost
+  ring; the invite → cancel transition is modeled explicitly in the call state
+  machine rather than filtered away.
 - **Ghost rings are canceled honestly.** A ring whose underlying call has ended
   (caller hung up during wake, setup failed) is torn down promptly with an
   honest disconnect cause. A missed-call entry from someone who never got
@@ -150,33 +172,122 @@ out.
 
 - **The in-app dialer places calls through the SDK** (`Voice.connect`),
   surfaced to the system as a proper Telecom call.
-- **Tokens are minted ahead of the call, not during it** (principle 3 in
-  `AGENTS.md`). The app caches an unexpired access token and refreshes it
-  opportunistically while in use — at app open, and before expiry — so call
-  setup normally spends nothing on the token endpoint and a transient endpoint
-  failure doesn't block a call while a valid cached token exists. On-demand
-  minting at dial time is the fallback, not the design. Refresh is in-use only —
-  no scheduled background refresh; an idle app just lets the token lapse and
-  re-mints at next open.
+- **A valid token is ready when the user dials, wherever possible** (principle
+  3 in `AGENTS.md`). The app caches an unexpired access token and keeps it
+  fresh opportunistically, so call setup normally spends nothing on the token
+  endpoint and a transient endpoint failure doesn't block a call while a valid
+  cached token exists. On-demand minting at dial time is the fallback, not the
+  design. The exact refresh policy is the implementation's, bounded by the
+  battery model — the spec requires only that dialing doesn't normally wait on
+  the endpoint.
 - Call setup states are visible immediately (dialing → ringing → connected), and
   every failure — no network, token fetch failed with no cached token, Twilio
   rejected the call — is surfaced with a reason, never a dead button.
 - The number the far end sees is the user's Twilio number.
-- Whether Twilmo should *also* transparently divert calls dialed in the stock
-  dialer (a `CallRedirectionService`, as phomo does for international numbers)
-  is an open product question below; v1 as specced is in-app dialing only.
+
+### Hand-off intent (Simmo integration)
+
+Twilmo is a first-class hand-off *target* for Simmo's rule engine (see simmo's
+`docs/handoff-intents.md` for the mechanism: Simmo cancels the carrier call and
+launches the target app at the dialed number). That mechanism shapes the
+contract — by the time Twilmo is launched, the user's original call is already
+gone, so a dead end or a silent no-op here strands a call. Three tiers, all part
+of v1's outbound milestone:
+
+- **Phone-account redirect — the preferred route.** Because Twilmo is a
+  call-provider calling account (see *Telecom integration*), Simmo's
+  redirection service can move the dialed call onto Twilmo's
+  `PhoneAccountHandle` without canceling anything: the platform places the call
+  on the line, auto-dial by construction, with nothing to strand. The intent
+  tiers below are the fallback for when the account isn't registered/enabled or
+  the line model is unavailable on a device.
+- **Conventional dial intents — pre-fill.** Twilmo's dialer activity handles
+  `ACTION_DIAL` and `ACTION_VIEW` with a `tel:` URI, opening the dialer
+  pre-filled with the number and waiting for a tap. This is deliberately
+  convention-compliant (a `DIAL`/`VIEW` handler must not place the call
+  itself), and it is what makes Twilmo discoverable to Simmo's existing generic
+  fallback — Simmo's reachability discovery offers only apps whose
+  number-carrying intent resolves, so these filters alone put Twilmo in Simmo's
+  editor with zero Simmo-side changes.
+- **Explicit hand-off — places the call.** `ACTION_CALL` with a `tel:` URI
+  places the call through Twilmo immediately, no tap — the behavior Simmo
+  records per-app as `requiresTap = false`, and the right one for
+  cancel-and-forward, where a pre-filled keypad after the carrier call
+  vanished reads as a bug. **The boundary is enforced, not assumed**: the
+  auto-dial activity is exported behind
+  `android:permission="android.permission.CALL_PHONE"`, so only senders the
+  user has granted phone-call permission (Simmo qualifies) can trigger a paid
+  call — an intent filter alone checks nothing, and an unprotected exported
+  dial-on-launch activity would let any installed app place calls on the
+  user's Twilio account. The pre-fill `DIAL`/`VIEW` filters stay open, as the
+  platform convention expects: they cost a tap, not money.
+- **"Resolves ≠ ready" is handled honestly.** If Twilmo is launched at a number
+  while unconfigured (no backend config, no network, token fetch fails), it
+  never dead-ends: the number is preserved on screen, the reason is stated, and
+  one tap retries or opens setup. Simmo cannot detect Twilmo's readiness from
+  the intent, so Twilmo degrades visibly instead.
+- **Number-keyed, never contact-keyed** (maintainer, 2026-08-02). The contract
+  requires no contacts integration on either side: Twilmo dials arbitrary PSTN
+  numbers, so the intents above carry the number itself, and hand-off must not
+  depend on contacts-provider registration entries (the sync-adapter "Connected
+  apps" rows apps like WhatsApp write). Simmo's per-contact route exists for
+  app-to-app callers that can *only* be reached that way, and its rows have
+  proven stale and unverifiable ("resolves ≠ ready"); Twilmo takes the
+  dial-intent route instead, which works for any number whether or not it is a
+  saved contact. Twilmo declares no contacts sync adapter in v1.
+- **Number format**: the `tel:` scheme-specific part as dialed. E.164 preferred
+  (Simmo normalizes before launching); national-format digits are parsed
+  against the configured home region rather than rejected.
+- **Emergency numbers are refused**, always: Twilmo never places an emergency
+  call over Twilio — it forwards the number to the platform dialer and says so.
+- **No redirect loop — by contract, not by accident.** Under the line model
+  Twilmo's connections are *managed*, and a managed outgoing call may be
+  offered to the `CallRedirectionService` — so "self-managed calls are never
+  redirected" protects only the fallback model and cannot be relied on. The
+  loop protection is therefore part of the integration contract, split by how
+  the call reached Twilmo: a call **Simmo redirected** onto Twilmo's account is
+  not re-offered to the redirection service by the platform; a
+  **cancel-and-forward** hand-off carries Simmo's existing pass token; and a
+  call the user **places directly on Twilmo** (in-app dialer, stock-dialer
+  account selection) is excluded Simmo-side — Simmo's decision function treats
+  a call whose initial `PhoneAccountHandle` already belongs to a calling app,
+  Twilmo's included, as "proceed unmodified" (its already-on-target
+  pass-through, extended to the account dimension). That Simmo-side rule is a
+  small follow-up tracked in `TODO.md`, and whether managed call-provider
+  calls are in fact offered to redirection on Pixel and Samsung is part of the
+  line model's device verification.
+- **This surface is a public contract.** Once shipped, the intent filters and
+  their behavior are kept stable and recorded here; Simmo-side, Twilmo then
+  gets its row in `docs/handoff-intents.md` as a confirmed auto-dial target.
 
 ## Telecom integration
 
-- Twilmo registers a **self-managed calling account** and drives calls through
-  **`androidx.core-telecom` (`CallsManager`)** — the modern path, which owns the
-  foreground-service lifecycle, audio endpoint routing (earpiece / speaker /
-  Bluetooth), and coexistence with cellular calls, and which the platform
-  documentation steers calling apps toward (`PUSH.md` §3). Twilmo does not touch
-  `AudioManager` routing itself.
-- Incoming calls post a **CallStyle notification within the platform's 5-second
-  window**, with a full-screen ring where `canUseFullScreenIntent()` allows and a
-  heads-up notification otherwise.
+- **Twilmo presents itself to the platform as a calling line, not just an app
+  that makes calls** (maintainer, 2026-08-02). It registers a Telecom
+  `PhoneAccount` with **`CAPABILITY_CALL_PROVIDER`** — the classic call-provider
+  integration SIP accounts used — rather than only a self-managed account. What
+  the line model buys:
+  - the **stock dialer can place calls on Twilmo** — per-call ("place call
+    using…") or as the account's default — with the system in-call UI and call
+    log attributing calls to the line;
+  - **Simmo can redirect a dialed call onto Twilmo's account directly**
+    (phone-account redirect — the mechanism simmo's `docs/handoff-intents.md`
+    records as unavailable for every current target), which is strictly better
+    than cancel-and-forward: the platform re-places the call itself, nothing is
+    stranded, and there is no pre-fill tap;
+  - incoming calls arrive through `addNewIncomingCall` on the account and ring
+    through the **platform's own incoming-call UI**.
+- **Verification owed before this hardens**: a call-provider account must be
+  enabled by the user under Calling accounts (an onboarding step), and
+  third-party call-provider behavior — including redirection onto the account
+  and the OEM dialer's in-call UI driving a Twilio SDK call — needs real-device
+  proof on both Pixel and Samsung. If the line model proves unreliable on an
+  OEM, the fallback is the **self-managed model** via `androidx.core-telecom`
+  (`CallsManager`), with a CallStyle notification within the platform's
+  5-second window and a full-screen ring where `canUseFullScreenIntent()`
+  allows — and Simmo integration then rides the intent contract instead. Either
+  way Telecom owns audio endpoint routing (earpiece / speaker / Bluetooth);
+  Twilmo never touches `AudioManager` routing itself.
 - **Audio capture waits for Telecom.** On Android 14+ a `microphone` foreground
   service cannot start from the background, so the app never starts capture
   straight off the push — Telecom binding the call, or the user's Answer tap, is
@@ -198,13 +309,13 @@ out.
   always-on cost is Google Play services' FCM socket — already open on every
   target device for every other app, costing Twilmo nothing incremental.
 - **Rare, deferrable scheduled work is fine when it earns its keep.** The first
-  instance is the **monthly registration renewal** (see *Inbound*): Twilio
-  expires registration bindings after roughly a year, and a phone whose owner
-  never opens the app must still ring, so a coarse `WorkManager` job (roughly
-  monthly, deferrable — it renews a ~1-year TTL, so timing precision is
-  irrelevant) re-runs registration. Cost: one short network round trip a
-  month — effectively zero battery — against principle 1's worst failure. Any
-  new scheduled work states the same trade in its PR.
+  instance is the **registration renewal** (see *Inbound*): Twilio expires
+  registration bindings after roughly a year, and a phone whose owner never
+  opens the app must still ring, so scheduled work re-runs registration
+  occasionally. Its cost — a short network round trip at long intervals — is
+  effectively zero battery against principle 1's worst failure. Scheduling
+  specifics (mechanism, cadence) live in the code, not here; any new scheduled
+  work states the same trade in its PR.
 - **During an active call only**, a foreground service (type `phoneCall` /
   `microphone`, managed via core-telecom) keeps the call alive and audible —
   scoped strictly to the call's lifetime.
@@ -264,7 +375,14 @@ Requested contextually at first use, never as a wall at first launch:
 - `INTERNET`, `ACCESS_NETWORK_STATE` — signaling and media; connectivity checks
   at call time. Install-time.
 - `RECORD_AUDIO` — call audio; requested at first call.
-- `MANAGE_OWN_CALLS` — the self-managed calling account.
+- `MANAGE_OWN_CALLS` — declared under **both** Telecom models, not just the
+  self-managed fallback: the `phoneCall` foreground-service type requires the
+  app to hold this permission (or the default-dialer role, which Twilmo never
+  takes), so dropping it under the line model would make the in-call service
+  throw. Whether the line model even needs an app-owned foreground service —
+  Telecom binding the managed `ConnectionService` may carry the process on its
+  own — is part of the device verification in *Telecom integration*; the
+  permission stays declared either way so the service is always legal.
 - `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_PHONE_CALL` /
   `FOREGROUND_SERVICE_MICROPHONE` — the in-call foreground service.
 - `POST_NOTIFICATIONS` — missed-call notices and the registration-health
@@ -273,19 +391,28 @@ Requested contextually at first use, never as a wall at first launch:
   registered phone account is exempt for CallStyle notifications, so inbound
   ringing never appears unavailable because this permission was declined
   (`PUSH.md` §13).
-- `USE_FULL_SCREEN_INTENT` — the full-screen ring; granted by default to calling
-  apps, checked via `canUseFullScreenIntent()` and degraded to heads-up when
-  revoked.
+- `USE_FULL_SCREEN_INTENT` — the full-screen ring in the self-managed fallback
+  model; granted by default to calling apps, checked via
+  `canUseFullScreenIntent()` and degraded to heads-up when revoked. Under the
+  line model the platform's own incoming-call UI rings instead.
 
 The manifest starts minimal and grows with the milestone that exercises each
 entry, so the app never ships holding a permission it doesn't use.
 
 ## Persistence
 
-- **Backend configuration** (token-endpoint URL and its client secret, the app's
-  Twilio identity) is the sensitive data Twilmo stores: encrypted at rest, in a
-  backup-excluded store, so secrets are never carried off-device by cloud backup
-  or device-to-device transfer.
+- **Backend configuration is split by sensitivity, so a restored device is not
+  a blank slate** (principle 2 in `AGENTS.md`: keep what is safe to keep). The
+  **token-endpoint URL and the app's Twilio identity** are configuration, not
+  secrets — they ride ordinary backup and device-to-device transfer, so after a
+  device replacement the app comes back knowing its own setup. Only the
+  **client secret** lives in the encrypted, backup-excluded store: a credential
+  should not transit cloud backup, and that is a narrow, stated exception, not
+  a silent wipe. After a restore, the app detects the missing secret and asks
+  for exactly that — one field, with the reason on screen ("restored from
+  backup; re-enter the endpoint secret") — instead of presenting first-run
+  setup as if nothing had ever been configured. Inbound registration resumes
+  on the next app start after re-entry, per the *Inbound* triggers.
 - **Settings** (theme, notification preferences) are ordinary preferences and may
   be backed up.
 - Twilmo keeps no call history of its own in v1 beyond what the platform call
@@ -319,6 +446,8 @@ entry, so the app never ships holding a permission it doesn't use.
 
 ## Distribution and versioning
 
+- Application ID **`app.twilmo`** (maintainer, 2026-08-02), with simmo's
+  `.debug` (CI tester) / `.dev` (local build) suffix scheme.
 - `versionCode` = `git rev-list --count HEAD`; `versionName` =
   `"1.0.<count>+<shortSha>"`, both derived at configure time in
   `app/build.gradle.kts`, matching the sibling repos.
@@ -350,8 +479,19 @@ entry, so the app never ships holding a permission it doesn't use.
 - **SMS.** Inbound SMS arrives by webhook, never by push to a client, so it
   requires real backend state (`PUSH.md` §9). Worth revisiting precisely
   *because* a token store would strengthen the backend story — but not v1.
-- **Transparent redirection of stock-dialer calls** (phomo's
-  `CallRedirectionService` role) — open question below; not in v1 as specced.
+- **Transparent redirection of stock-dialer calls** (the
+  `CallRedirectionService` role). Decided, not open: that is Simmo's job, and
+  Twilmo integrates with it as a hand-off target instead (see *Hand-off
+  intent*).
+- **A contacts sync adapter** ("Connected apps" entries under contacts) — the
+  hand-off contract is deliberately number-keyed, so nothing needs it.
+- **All outbound calls on Twilmo by default — a v2 exploration** (maintainer,
+  2026-08-02). Under the line model this may need no new machinery: the stock
+  dialer can already make a calling account the default. The exploration is
+  whether it's *desirable* — per-minute cost vs. the SIM's plan, reliability on
+  no-network moments, and the guarantee that emergency and short-code calls
+  always stay on the SIM. Tracked in `TODO.md`; nothing in v1 depends on the
+  answer.
 - **Presenting the user's mobile number as outbound caller ID** — depends on
   Twilio verified-caller-ID configuration; post-v1 at best.
 - **Multiple numbers / multiple providers**, call recording, an IVR, or being
@@ -361,13 +501,16 @@ entry, so the app never ships holding a permission it doesn't use.
 
 Ordered by how much each would change what gets built.
 
-- **Product shape: pure second line, or also a transparent outbound router?**
-  As specced, outbound means dialing inside Twilmo. Should Twilmo also take the
-  `CallRedirectionService` role and divert international calls dialed in the
-  stock dialer onto the Twilio line, phomo-style? That adds phomo's number
-  classification, fail-toward-the-SIM machinery, and the ~5 s redirection
-  deadline discipline to scope — a substantial addition, best decided before the
-  Telecom milestone.
+- **Does the line model survive contact with real devices?** Four specific
+  unknowns, all device-verification rather than design: whether a third-party
+  `CAPABILITY_CALL_PROVIDER` account is offered by the stock dialer's account
+  chooser on Pixel *and* Samsung, whether a `CallRedirectionService` (Simmo)
+  can redirect onto it, whether the OEM in-call UI drives a Twilio SDK call's
+  audio correctly, and whether outgoing calls placed on the account are
+  themselves offered to a redirection service (which decides how much of the
+  "No redirect loop" contract Simmo's account pass-through has to carry). The
+  self-managed fallback plus the auto-dial intent is the specced answer if the
+  model fails.
 - **Which country's number(s) first?** Number eligibility varies sharply by
   country (Germany is closed to individuals at Twilio; the UK and US are easy —
   `PUSH.md` §9) and it affects nothing in the architecture but everything in
@@ -380,5 +523,3 @@ Ordered by how much each would change what gets built.
   Twilio at the cost of a second platform. Cheap to revisit until Phase 1 lands.
 - **Telemetry**: does Crashlytics ride the same (now-mandatory) Firebase project
   as FCM, keeping the siblings' opt-in gating model?
-- **Application ID**: `app.twilmo`, following simmo's `app.simmo` (with `.debug`
-  / `.dev` suffix scheme for CI and local builds)?

@@ -4,7 +4,7 @@ Twilmo makes and receives phone calls on a Twilio number from an Android phone â
 reliably, with near-zero idle battery cost. Inbound calls wake the phone by
 high-priority push (Twilio holds the call while the device comes up); outbound
 calls go through the same Twilio Voice SDK stack. Between calls the app runs
-nothing beyond a roughly-monthly registration renewal that keeps the number
+nothing beyond an occasional registration renewal that keeps the number
 reachable.
 
 - **What it does and why**: [SPEC.md](SPEC.md)

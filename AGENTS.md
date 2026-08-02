@@ -76,7 +76,7 @@ call reliability & audio quality, and the inbound wake path**:
   What that means in practice: the always-running posture — a persistent
   service, a wakelock, a polling loop, a network keep-alive, a standing
   `ConnectivityManager` callback — is the thing to design away from, and rare
-  or deferrable background work (`WorkManager` — e.g. the roughly-monthly
+  or deferrable background work (`WorkManager` — e.g. the occasional
   registration renewal, `SPEC.md` → *Battery model*) is acceptable when it's
   necessary: say in the PR what it buys and why on-demand can't cover it. When
   in doubt, prefer the design that does nothing in the background.
