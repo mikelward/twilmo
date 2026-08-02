@@ -13,9 +13,8 @@ green.
 
 ## Phase 0b — Project scaffold
 
-- [ ] Gradle + AGP + Compose skeleton (`:app`, application ID per the open
-      question in `SPEC.md`), buildable in CI, `versionCode` from
-      `git rev-list --count HEAD`.
+- [ ] Gradle + AGP + Compose skeleton (`:app`, application ID `app.twilmo`),
+      buildable in CI, `versionCode` from `git rev-list --count HEAD`.
 - [ ] CI workflow (`android-ci.yml`): build, unit tests (failure comments on
       PRs), lint, screenshot job — mirrored from simmo, release steps
       secret-gated.
@@ -36,32 +35,61 @@ green.
 
 ## Phase 2 — Outbound calling
 
-- [ ] Encrypted, backup-excluded config store (token-endpoint URL + secret,
-      identity) and the setup screen.
-- [ ] Token client: cache an unexpired token, refresh opportunistically while
-      in use (app open, pre-expiry — no scheduled background refresh), mint
-      on demand as the fallback; explicit failure surfacing (no network, bad
-      secret, endpoint down with no cached token → reason shown at dial time).
-      Cache/refresh logic unit-tested.
+- [ ] Config store split by sensitivity (SPEC → *Persistence*): endpoint URL +
+      identity ride backup/transfer; only the client secret is encrypted and
+      backup-excluded. Setup screen, plus the restore path: detect the missing
+      secret after a restore and ask for exactly that one field with the
+      reason stated.
+- [ ] Token client: keep a valid token ready ahead of dialing (cache +
+      opportunistic refresh; exact policy chosen at implementation time within
+      the battery model), mint on demand as the fallback; explicit failure
+      surfacing (no network, bad secret, endpoint down with no cached token →
+      reason shown at dial time). Cache/refresh logic unit-tested.
 - [ ] Call state machine (pure Kotlin, table-tested) driving the Twilio Voice
       SDK: connect, ringing, connected, disconnected, every failure edge.
-- [ ] Telecom integration via `androidx.core-telecom` (`CallsManager`):
-      self-managed calling account, in-call foreground service scoped to the
-      call, audio routing owned by the platform.
+- [ ] Telecom integration, line model first (SPEC → *Telecom integration*):
+      register a `CAPABILITY_CALL_PROVIDER` phone account + `ConnectionService`
+      so Twilmo is a calling line the stock dialer (and Simmo's phone-account
+      redirect) can place calls on; in-call foreground service scoped to the
+      call; audio routing owned by the platform. Device-verify the four line
+      unknowns (SPEC → *Open questions*) before hardening; fall back to
+      self-managed via `androidx.core-telecom` if the model fails.
+- [ ] Simmo-side prerequisite for the line model (SPEC → *Hand-off intent*,
+      "No redirect loop"): extend Simmo's already-on-target pass-through to
+      the account dimension — a call whose initial `PhoneAccountHandle`
+      already belongs to a calling app (Twilmo included) proceeds unmodified.
+      Land in simmo before (or with) enabling Twilmo's call-provider account;
+      scope confirmed by the device verification of whether managed calls are
+      offered to redirection at all.
+- [ ] Hand-off intent contract (SPEC → *Hand-off intent*): `ACTION_DIAL` /
+      `ACTION_VIEW tel:` pre-fill, `ACTION_CALL tel:` dials immediately with
+      the activity exported behind
+      `android:permission="android.permission.CALL_PHONE"`; number-keyed only;
+      unconfigured launch degrades visibly with the number preserved;
+      emergency numbers forwarded to the platform dialer. Unit-test the number
+      parsing, the permission boundary, and the refusal paths.
 - [ ] Dialer + in-call screen (mute, speaker/Bluetooth via Telecom, DTMF
       keypad, hang up), with screenshot tests.
 
 ## Phase 3 — Inbound calling
 
 - [ ] `FirebaseMessagingService`: high-priority check, payload parse, dedupe on
-      call identifier — all pure-logic-tested.
+      call identifier + event type (a cancel shares its invite's identifier
+      and must never be swallowed) — all pure-logic-tested.
 - [ ] `Voice.register` on app start / `onNewToken` / credentials change — and
       deliberately *not* on network change. Unit tests for every trigger,
       including rotation while backgrounded.
-- [ ] Monthly registration-renewal job (`WorkManager`, deferrable) so the
-      binding never crosses Twilio's ~1-year TTL unopened (SPEC → *Battery
-      model*: scheduled work is fine, the always-running posture is what's
-      banned); scheduling logic unit-tested.
+- [ ] A credentials change that replaces the identity or the registration
+      authority (account/endpoint, even with the same identity string)
+      unregisters the old binding first (SPEC → *Inbound*): complete
+      `Voice.unregister` — which needs an access token for the old identity
+      minted by the old authority — before discarding the old auth config;
+      surface a leftover binding when the old backend is gone; switch path
+      unit-tested.
+- [ ] Scheduled registration renewal so the binding never crosses Twilio's
+      ~1-year TTL unopened (SPEC → *Battery model*: scheduled work is fine,
+      the always-running posture is what's banned; cadence and scheduler
+      chosen at implementation time); scheduling logic unit-tested.
 - [ ] Push → Telecom `addIncomingCall` → CallStyle notification within 5 s;
       full-screen ring gated on `canUseFullScreenIntent()`; audio capture only
       after Telecom brings the call up.
@@ -92,6 +120,17 @@ green.
 - [ ] Theme/settings, translations (per the `AGENTS.md` two-PR flow), Play
       internal-track wiring.
 
+## v2 explorations (deferred, decided direction only)
+
+- [ ] **All outbound calls on Twilmo by default** (maintainer, 2026-08-02) —
+      likely just the stock dialer's default-calling-account setting under the
+      line model; explore desirability: cost vs. SIM plan, no-network behavior,
+      emergency/short-code calls always staying on the SIM.
+- [ ] Simmo-side follow-up once the hand-off contract ships: add Twilmo's row
+      to simmo's `docs/handoff-intents.md` as a confirmed auto-dial (and
+      phone-account-redirect) target. (The account pass-through itself is v1
+      work — see Phase 2.)
+
 ## Decisions needing review
 
 Guesses made while drafting the skeleton, each cheap to change:
@@ -100,8 +139,10 @@ Guesses made while drafting the skeleton, each cheap to change:
   alternative was a Worker/Cloud Run function. Reversible until Phase 1 lands.
 - **Codex is named as the automated reviewer** in `AGENTS.md`, following simmo
   (phomo uses Copilot). One-line change if wrong.
-- **Application ID `app.twilmo`** with simmo's `.debug`/`.dev` suffix scheme —
-  flagged as an open question in `SPEC.md`; nothing depends on it until
-  Phase 0b.
-- **In-app dialing only for outbound v1** (no `CallRedirectionService`) — the
-  top open question in `SPEC.md`; scope grows if the answer is "router too."
+
+Resolved (maintainer, 2026-08-02): Twilmo is a second line only — Simmo owns
+redirection, and Twilmo integrates as a calling line: a call-provider phone
+account plus a number-keyed hand-off intent that dials immediately
+(Google-Voice-style deep link, minus the pre-fill tap), never requiring
+contacts registration entries. Also resolved (maintainer, 2026-08-02): the
+application ID is `app.twilmo`, with simmo's `.debug`/`.dev` suffix scheme.
