@@ -398,6 +398,11 @@ genuinely needed for clarity, say why in the PR.
 
 ## Translations
 
+**Translations are deferred until after MVP** (maintainer, 2026-08-02). The
+discipline below still applies from day one — every user-facing string lands as a
+base string resource with the per-string ignore, never hardcoded — so starting
+translation later is pure fan-out; only the fan-out itself waits.
+
 English first, translations in a second PR — never the same PR. Propose new English
 copy in chat and get explicit approval before translating. New base strings land
 with a per-string `tools:ignore="MissingTranslation"` and a `<!-- TODO: translate

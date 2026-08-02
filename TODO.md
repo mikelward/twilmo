@@ -142,8 +142,16 @@ green.
 - [ ] Onboarding flow (contextual permission requests, setup validation call).
 - [ ] `docs/PRIVACY.md` (push-per-call disclosure to Google, Twilio's carrier
       position, debug-log contents) before any release.
-- [ ] Theme/settings, translations (per the `AGENTS.md` two-PR flow), Play
-      internal-track wiring.
+- [ ] Theme/settings, Play internal-track wiring.
+
+## Post-MVP
+
+- [ ] Translations (maintainer, 2026-08-02: deferred until after MVP). Every
+      user-facing string still lands in `values/strings.xml` with the
+      per-string `MissingTranslation` ignore as it's written, so this is pure
+      fan-out when it starts: propose/approve English copy in chat, then one
+      PR per the `AGENTS.md` two-PR flow adds every locale and removes the
+      ignores.
 
 ## v2 explorations (deferred, decided direction only)
 
