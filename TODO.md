@@ -70,6 +70,10 @@ green.
       parsing, the permission boundary, and the refusal paths.
 - [ ] Dialer + in-call screen (mute, speaker/Bluetooth via Telecom, DTMF
       keypad, hang up), with screenshot tests.
+- [ ] On-device debug log foundation per the `AGENTS.md` privacy policy
+      (coarse call-flow state, one reason per outcome), landing with the
+      first call paths so no milestone ships failure paths without their
+      diagnostic reasons; inbound instruments it as Phase 3 lands.
 
 ## Phase 3 — Inbound calling
 
@@ -77,14 +81,26 @@ green.
       call identifier + event type (a cancel shares its invite's identifier
       and must never be swallowed) — all pure-logic-tested.
 - [ ] `Voice.register` on app start / `onNewToken` / credentials change — and
-      deliberately *not* on network change. Unit tests for every trigger,
-      including rotation while backgrounded.
+      deliberately *not* on network change — with **every trigger gated on the
+      visible-outlet invariant** (SPEC → *Inbound*, push discipline): a
+      trigger registers only while the calling account is registered and
+      enabled, and the account becoming disabled or removed unregisters the
+      binding. Unit tests for every trigger and the gate, including rotation
+      while backgrounded and a trigger firing while the account is disabled.
 - [ ] A credentials change that replaces the identity or the registration
       authority (account/endpoint, even with the same identity string)
       unregisters the old binding first (SPEC → *Inbound*): complete
       `Voice.unregister` — which needs an access token for the old identity
-      minted by the old authority — before discarding the old auth config;
-      surface a leftover binding when the old backend is gone; switch path
+      minted by the old authority — before discarding the old auth config.
+      Same for the account being disabled or removed: an unregister that
+      can't complete (offline, authority unreachable) is retried as deferred
+      background work until confirmed, the binding is treated as possibly
+      live until then, and a leftover binding is surfaced when the old
+      backend is gone for good. When confirmation is permanently impossible
+      and no visible outlet remains, delete the app's FCM registration token
+      (SPEC → *Inbound*) — the authority-independent kill switch that
+      invalidates every binding to this install at the FCM layer; a later
+      setup mints a fresh token. Switch, retry, and kill-switch paths
       unit-tested.
 - [ ] Scheduled registration renewal so the binding never crosses Twilio's
       ~1-year TTL unopened (SPEC → *Battery model*: scheduled work is fine,
@@ -94,20 +110,23 @@ green.
       full-screen ring gated on `canUseFullScreenIntent()`; audio capture only
       after Telecom brings the call up.
 - [ ] Ghost-ring teardown with honest disconnect causes (caller hung up during
-      wake, setup failure); missed-call notice.
+      wake, setup failure); missed-call notice — with the
+      notifications-denied path surfaced by the **platform dialer's own
+      missed-call notification** via Telecom's disconnect handling (the call
+      log is the record, not the surface), device-verified on Pixel and
+      Samsung (SPEC → *Inbound*, push discipline).
 - [ ] Inbound races unit-tested: push with no credentials, push during a
       cellular call, push after caller hangup, duplicate push.
 
 ## Phase 4 — Reliability surface
 
 - [ ] Registration-health readout on the home screen: last successful
-      registration, last push received, current permission/config gaps.
+      registration, last push received, current permission/config gaps —
+      including a denied `POST_NOTIFICATIONS` flagged as a gap.
 - [ ] Hibernation guard (SPEC → *Inbound*): check
       `PackageManagerCompat.getUnusedAppRestrictionsStatus()`, guide the user
       through `ACTION_MANAGE_UNUSED_APP_RESTRICTIONS` in onboarding, and warn
       in the health readout when "Pause app activity if unused" is on.
-- [ ] On-device debug log per the `AGENTS.md` privacy policy (coarse call-flow
-      state, one reason per outcome).
 - [ ] Measure the load-bearing latencies on a real Pixel and Samsung: routing
       webhook response (cold and warm Function), FCM delivery to a Dozing
       device, wake-to-ring time. Record findings in `SPEC.md`.
