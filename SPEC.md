@@ -136,7 +136,43 @@ out.
   a demoted push cannot wake a call. Therefore: every push ends in something
   visible (ring, missed-call notice, or a stated failure); no speculative or
   silent pushes ever; the handler checks the delivered priority before doing
-  call work. Duplicate deliveries are deduped on **call identifier plus event
+  call work. **This holds even with `POST_NOTIFICATIONS` denied — and a
+  passive call-log row is not the visible outcome**; the log is the durable
+  record, not a surface anyone sees at push time. The exempt surfaces are the
+  call ones: the ring itself (CallStyle is exempt for a registered calling
+  app), and a push that can't become an answered call is still raised and
+  ended through Telecom with an honest missed/disconnect cause, so that under
+  the line model the **platform dialer's own missed-call notification** —
+  which Twilmo's permission does not gate — surfaces the miss immediately.
+  Under the self-managed fallback the exemption covers the ring, which is the
+  push's visible outcome; the suppressed missed-call notice is the residual
+  gap onboarding asks to fix and the health readout flags. **A state with no
+  visible outlet does not receive pushes at all**: Twilmo holds an inbound
+  registration only while its calling account is registered and enabled —
+  able to raise the ring or the honest Telecom-completed miss — and when that
+  stops being true it unregisters the binding rather than letting invisible
+  deliveries arrive and demote the pushes that matter, with the health
+  readout saying inbound is off and why. Unregistering is itself a network
+  call that can fail — the device may be offline, or the old token authority
+  already unreachable — so the invariant doesn't rest on a single attempt:
+  an unregister that can't complete is retried as deferred background work
+  until confirmed (fine under the *Battery model* — rare, event-driven, and
+  it ends), and until confirmation the binding is treated as possibly live —
+  a push arriving in that window is still handled to a visible end (the
+  stated-failure notification where notifications are granted; otherwise the
+  debug log carries the reason and the health readout shows the leftover
+  binding). And the retry is not the last line, because it can be permanently
+  defeated — the old token authority gone for good — while notifications are
+  denied: the **FCM registration token itself is the authority-independent
+  kill switch**. When unregistration cannot be confirmed and no visible
+  outlet remains, the app deletes its own FCM token, which invalidates every
+  binding addressed to this installation at the FCM layer — the stale
+  binding's pushes then fail upstream instead of arriving invisibly, which
+  also protects the priority standing of future pushes. Nothing live is
+  lost: this state exists only when no enabled calling account remains, and
+  the next setup mints and registers a fresh token. The health readout still
+  surfaces the leftover binding so the user can clear it from the Twilio
+  console when convenient. Duplicate deliveries are deduped on **call identifier plus event
   type** — a cancel push carries the same identifier as its invite, so
   identifier-only dedupe would swallow the cancellation and leave a ghost
   ring; the invite → cancel transition is modeled explicitly in the call state
@@ -390,7 +426,11 @@ Requested contextually at first use, never as a wall at first launch:
   `MANAGE_OWN_CALLS`, a `ConnectionService`-backed calling account, and a
   registered phone account is exempt for CallStyle notifications, so inbound
   ringing never appears unavailable because this permission was declined
-  (`PUSH.md` §13).
+  (`PUSH.md` §13). A denial does suppress the app's own non-exempt notices,
+  so the push discipline routes those outcomes through exempt surfaces
+  (the exempt ring, and Telecom disconnect handling that puts the miss in
+  front of the user via the platform dialer under the line model — see
+  *Inbound*) and the health readout flags the denial as a gap.
 - `USE_FULL_SCREEN_INTENT` — the full-screen ring in the self-managed fallback
   model; granted by default to calling apps, checked via
   `canUseFullScreenIntent()` and degraded to heads-up when revoked. Under the
