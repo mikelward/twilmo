@@ -349,30 +349,50 @@ without silently fixing it in the same commit.
 
 ## Privacy
 
-- **Never put user data in any artifact that leaves this machine.** That includes
-  commit subjects and bodies, PR titles / descriptions / comments, review replies,
-  issue text, branch names, code comments, test fixtures, screenshot snapshots,
-  and anything else that ends up on GitHub, the Play Console, or in logs. This app
-  handles PII by definition — **phone numbers, call logs, contact names, the
-  user's Twilio number, Twilio account identifiers (Account SID, API keys, auth
-  tokens, Call SIDs tied to real calls), FCM registration tokens, access tokens,
-  and the backend endpoint's URL and secrets**. None of it goes into a commit, a
+- **The goal is preserving the user's privacy — not adopting the narrowest
+  possible definition and prematurely encoding it as the final version**
+  (maintainer, 2026-08-02). Privacy decisions are weighed like any other
+  design decision: against functionality, data loss, performance, cost, and
+  simplicity. The rules below are floors to build on, not a ceiling fixed
+  before the features that must live within it exist — don't write a promise
+  today that a useful, consented feature would have to break tomorrow. A flow
+  the user knowingly chooses is not a leak — the approximate shape, not an
+  exhaustive list: with consent, debug or redacted logs can go to
+  analytics/crash-reporting servers, data can be backed up off-device, a
+  debug report can be shared. Deciding *for* the user — in either
+  direction — is the failure mode, per principle 2.
+- **Never put user data in any development artifact that leaves this
+  machine.** That includes commit subjects and bodies, PR titles /
+  descriptions / comments, review replies, issue text, branch names, code
+  comments, test fixtures, screenshot snapshots, and anything else that ends
+  up on GitHub, the Play Console, or in logs. This app handles PII by
+  definition — **phone numbers, call logs, contact names, the user's Twilio
+  number, Twilio account identifiers (Account SID, API keys, auth tokens,
+  Call SIDs tied to real calls), FCM registration tokens, access tokens, and
+  the backend endpoint's URL and secrets**. None of it goes into a commit, a
   PR, a bug reproduction, or a test fixture. If a user-supplied bug report
   contains real numbers or SIDs, paraphrase — don't quote verbatim. When in
-  doubt, ask before pushing.
+  doubt, ask before pushing. This rule is about the artifacts *we* publish
+  while building the app; the product's own data flows — registering the FCM
+  token with Twilio, sending credentials to the user's chosen backend,
+  platform backup — are `SPEC.md` design decisions, weighed on their merits,
+  not banned here.
 - **The test is whether a value is somebody's, not whether the name is real.**
   Stock stand-ins are fine (`Telstra` as *a* carrier, `+15550100` as a number,
   `ACxxxx…` as an obviously-fake SID). What is banned is a *particular person's*
   data lifted from a device or a bug report.
-- **The on-device debug log is the one sanctioned exception, and a narrow one.**
+- **The on-device debug log is the sanctioned diagnostic surface, and a
+  deliberately narrow one.**
   Diagnosing "why didn't it ring" is a hard product requirement, so the log may
   carry **coarse call-flow state**: which step failed (push received, registration,
   token fetch, Telecom handoff, media), a dialed number's country calling code,
   and per-call outcome with one reason. The floor is absolute: never a full
   number, a contact's name, a credential, or a raw token. Above the floor the
   test is need, not category — log what a reader plausibly needs to explain a
-  call outcome and no more. `docs/PRIVACY.md` must describe what the log carries
-  before any sharing feature ships.
+  call outcome and no more, and don't add a field without a failure it makes
+  diagnosable. `docs/PRIVACY.md` must describe what the log carries before any
+  sharing feature ships — and must be written from what actually ships, when
+  it ships, so a later diagnostic never has to break an earlier promise.
 
 ## Language and spelling
 

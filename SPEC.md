@@ -473,6 +473,14 @@ entry, so the app never ships holding a permission it doesn't use.
   crash telemetry rides the same project is a Phase decision in `TODO.md`).
 - The on-device debug log follows the narrow policy in `AGENTS.md` *Privacy*:
   coarse call-flow state only, never a full number, name, credential, or token.
+- **Privacy commitments follow the product, not the other way around**
+  (maintainer, 2026-08-02). The goal is preserving the user's privacy, weighed
+  like any other design decision against functionality, data loss,
+  performance, cost, and simplicity — not adopting the narrowest possible
+  posture and prematurely encoding it as final. `docs/PRIVACY.md` is written
+  from what actually ships, when it ships; a flow the user knowingly chooses
+  (sharing a debug report, backing up settings) is a feature to design well,
+  not a violation to design away.
 
 ## UI architecture
 

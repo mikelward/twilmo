@@ -185,6 +185,11 @@ Guesses made while drafting the skeleton, each cheap to change:
   Firebase/Play pipeline before those accounts exist would ship 500 untested
   workflow lines; the build/test/lint/screenshot jobs land now.
 
+Resolved (maintainer, 2026-08-02): privacy rules are floors that preserve the
+user's privacy, weighed against functionality, data loss, performance, cost,
+and simplicity — never the narrowest reading prematurely encoded as final
+(`AGENTS.md` → *Privacy*, `SPEC.md` → *Privacy*).
+
 Resolved (maintainer, 2026-08-02): Twilmo is a second line only — Simmo owns
 redirection, and Twilmo integrates as a calling line: a call-provider phone
 account plus a number-keyed hand-off intent that dials immediately
