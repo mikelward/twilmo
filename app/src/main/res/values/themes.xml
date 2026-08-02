@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose draws everything; the platform theme only styles the window,
+         which shows before Compose's first frame. Match it to the scheme
+         (values-night carries the dark parent) so that flash isn't inverted. -->
+    <style name="Theme.Twilmo" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

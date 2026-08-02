@@ -489,8 +489,10 @@ entry, so the app never ships holding a permission it doesn't use.
 - Application ID **`app.twilmo`** (maintainer, 2026-08-02), with simmo's
   `.debug` (CI tester) / `.dev` (local build) suffix scheme.
 - `versionCode` = `git rev-list --count HEAD`; `versionName` =
-  `"1.0.<count>+<shortSha>"`, both derived at configure time in
-  `app/build.gradle.kts`, matching the sibling repos.
+  `"<base>.<count>+<shortSha>"`, both derived at configure time in
+  `app/build.gradle.kts`, matching the sibling repos. The base is `0.1` until
+  the MVP ships — pre-1.0 is deliberate for an app that hasn't reached its
+  first release.
 - CI (`.github/workflows/android-ci.yml`, landing with the scaffold milestone)
   builds and unit-tests every PR, records screenshots, and on `main` runs the
   sibling repos' release pipeline; commit subjects become the release "What's

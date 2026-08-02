@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark-mode counterpart of values/themes.xml: the window shown before
+         Compose's first frame follows the active scheme. -->
+    <style name="Theme.Twilmo" parent="android:Theme.Material.NoActionBar" />
+</resources>
