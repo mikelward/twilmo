@@ -192,6 +192,10 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)
+    // Test-only: the real org.json for plain JVM tests — the platform
+    // provides these classes on device, but android.jar stubs them out in
+    // unit tests. Never on the app classpath.
+    testImplementation(libs.json)
     // Test-only: sealedSubclasses for the state machine's sample-coverage
     // check; never on the app classpath.
     testImplementation(libs.kotlin.reflect)
