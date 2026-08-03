@@ -75,6 +75,12 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test
 
+      # The Twilio Functions in functions/ are plain Node handlers; their
+      # tests run on Node's built-in runner (the runner image ships Node),
+      # so backend regressions surface here instead of on deploy.
+      - name: Run backend function tests
+        run: node --test "functions/*.test.js"
+
       - name: Print failing test details
         # When `gradlew test` fails the JUnit XML still contains the failure
         # messages and stack traces. Dump them to the job log AND, on a PR
