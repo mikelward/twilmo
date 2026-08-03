@@ -14,8 +14,13 @@
         android:name="android.hardware.telephony"
         android:required="false" />
 
+    <!-- Backup stays on: endpoint + identity ride backup/transfer so a new
+         phone keeps the user's setup (SPEC "Persistence"). Only the client
+         secret is excluded, via the rules files. -->
     <application
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="${launcherIcon}"
         android:label="${appLabel}"
         android:supportsRtl="true"

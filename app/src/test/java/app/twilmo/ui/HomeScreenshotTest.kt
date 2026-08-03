@@ -6,6 +6,7 @@ import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import app.twilmo.domain.config.ConfigState
 import app.twilmo.ui.theme.TwilmoTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -33,7 +34,11 @@ class HomeScreenshotTest {
             // The production theme, pinned to light so the snapshot is
             // deterministic; a theme regression should change this image.
             TwilmoTheme(darkTheme = false) {
-                HomeScreen(versionName = "0.1.1+0000000")
+                HomeScreen(
+                    versionName = "0.1.1+0000000",
+                    configState = ConfigState.NotConfigured,
+                    onSetUp = {},
+                )
             }
         }
         composeRule.waitForIdle()
@@ -43,6 +48,50 @@ class HomeScreenshotTest {
         composeRule.onNodeWithText("0.1.1+0000000").assertExists()
 
         captureSnapshot("home_not_set_up.png")
+    }
+
+    @Test
+    fun home_statusUnavailable() {
+        composeRule.setContent {
+            TwilmoTheme(darkTheme = false) {
+                HomeScreen(
+                    versionName = "0.1.1+0000000",
+                    configState = ConfigState.Unknown,
+                    onSetUp = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        // A failed status refresh shows its own honest state — never a
+        // stale "Ready" — with setup still reachable.
+        composeRule.onNodeWithText("Status unavailable").assertExists()
+        composeRule.onNodeWithText("Set up").assertExists()
+
+        captureSnapshot("home_status_unavailable.png")
+    }
+
+    @Test
+    fun home_settingsReset() {
+        composeRule.setContent {
+            TwilmoTheme(darkTheme = false) {
+                HomeScreen(
+                    versionName = "0.1.1+0000000",
+                    configState = ConfigState.NotConfigured,
+                    settingsReset = true,
+                    onSetUp = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        // A corruption reset must not pose as an ordinary first run.
+        composeRule.onNodeWithText(
+            "Saved settings could not be read and were reset. Set up again.",
+        ).assertExists()
+        composeRule.onNodeWithText("Set up").assertExists()
+
+        captureSnapshot("home_settings_reset.png")
     }
 
     private fun captureSnapshot(name: String, widthPx: Int = 1080, heightPx: Int = 1920) {

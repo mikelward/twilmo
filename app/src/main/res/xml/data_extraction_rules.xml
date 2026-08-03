@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPEC "Persistence": endpoint + identity ride backup and device
+     transfer; the client secret does not — it is re-entered after a
+     restore, with the reason stated in setup. The excluded file name must
+     match KeystoreSecretStore.PREFS_NAME. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="twilmo_secret.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="twilmo_secret.xml" />
+    </device-transfer>
+</data-extraction-rules>

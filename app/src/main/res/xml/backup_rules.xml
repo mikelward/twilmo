@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The pre-Android-12 counterpart of data_extraction_rules.xml; minSdk 34
+     devices use the extraction rules, but lint requires both while
+     android:fullBackupContent is set. Same single exclusion. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="twilmo_secret.xml" />
+</full-backup-content>

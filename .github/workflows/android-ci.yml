@@ -176,6 +176,9 @@ jobs:
       - name: Run home screenshot tests
         run: ./gradlew :app:testDebugUnitTest --tests "app.twilmo.ui.HomeScreenshotTest" -Proborazzi.test.record=true
 
+      - name: Run setup screenshot tests
+        run: ./gradlew :app:testDebugUnitTest --tests "app.twilmo.ui.SetupScreenshotTest" -Proborazzi.test.record=true
+
       - name: Print failing test details
         if: failure()
         run: |
