@@ -223,15 +223,16 @@ without silently fixing it in the same commit.
   explicitly asked to watch — for new review comments, CI status, approvals, and
   the Codex thumbs up. Never end a turn by going idle with one of yours still open:
   arm the next check with whatever the client offers (`send_later`, a scheduled
-  task / cron, `/loop`), and arm it *without asking*. Merging doesn't end the watch
-  either: drop to a slower cadence (every half hour or so) and keep handling late
-  comments per the reply-or-resolve rule under *Working with PRs*.
-- **Three polling states, so the 5-minute cadence has an end.** Five minutes is for
-  a PR with something outstanding: CI running, a review requested, a comment
-  unanswered, a merge conflict. Once a PR is green, reviewed, and has nothing left
-  but the merge — or is merged and only waiting out late comments — drop to
-  half-hourly. Stop entirely when it merges or closes and the late-comment window
-  has passed.
+  task / cron, `/loop`), and arm it *without asking*. Once a PR is green, reviewed,
+  and has nothing left but the merge, drop to half-hourly — that's a queue waiting
+  on a human, not work in flight. Merged or closed unmerged is terminal: wait for
+  one more check to see CI and Codex report on the final head, but don't block on
+  a report that may never land — an early manual merge, a docs-only push a path
+  filter never runs CI on, a down review service — settle for whatever's known by
+  then and move on. Either way, run one last reply-or-resolve pass, then cancel
+  the watch in full: `unsubscribe_pr_activity` *and* the pending scheduled
+  trigger, not just one of the two. Open a follow-up PR (with its own watch) for
+  anything a merged PR still needs.
 - **One pending check per PR, not one per wake-up.** Before arming, reuse or cancel
   the pending one (`update_trigger`, or `delete_trigger` then re-arm) so exactly
   one check is outstanding.
@@ -293,9 +294,7 @@ without silently fixing it in the same commit.
 - Refresh the PR title and body on every push so they describe the full, latest
   state of the branch — re-read `git diff origin/main...HEAD` and patch whatever
   drifted.
-- Keep watching merged PRs for late review comments; stop once every post-merge
-  comment is handled *and* the PR has gone ~24h without a new one. A PR closed
-  without merging gets the same treatment, timed from the close.
+- **Canceling the watch**: see the polling bullet under *Autonomy*.
 - Skip echo events silently: if a webhook event's body matches a comment you just
   posted, it's your own echo — continue without comment.
 - On CI failure: check for the failing-tests PR comment first; no comment means the
