@@ -74,11 +74,20 @@ green.
       warm-up refresh only when the cache is thin (battery model: refreshes
       ride moments the app is already awake); the credential is never
       printable via toString.
-- [ ] Token client around the policy: fetch/mint against the access-token
-      endpoint, cache storage, and explicit failure surfacing (no network,
-      bad secret, endpoint down with no cached token → reason shown at dial
-      time), wired to the call state machine's token request; failure
-      mapping unit-tested.
+- [x] Token minting core (pure, fake-transport-tested): maps the pinned
+      endpoint contract onto results — minted tokens stamped with the
+      authority key and clock-derived expiry; 401 → bad secret, other
+      statuses → endpoint error with the code, unreachable → network
+      failure, off-contract 200 → malformed — each with a one-line
+      sanitized debug reason that never carries a body, URL, or secret.
+      The dial-time flow composes the readiness policy with one mint:
+      fresh-mint replace-cache, background-refresh signaling, the
+      last-resort fallback re-checked after the mint with its failure kept
+      visible, and no-token failing the dial with the reason.
+- [ ] Wire the token client into the app: the real HTTPS transport
+      (sanitized failure details), cache storage, and the call state
+      machine's token request driving DialTokenFlow — reasons surfaced at
+      dial time per SPEC → *Outbound*.
 - [x] Call state machine (pure Kotlin, table-tested): dial → token →
       connect → ringing → connected → disconnected, with every failure edge
       explicit, exactly one reported outcome per call, unexpected events
