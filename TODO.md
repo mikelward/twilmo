@@ -59,11 +59,18 @@ green.
 
 ## Phase 2 — Outbound calling
 
-- [ ] Config store split by sensitivity (SPEC → *Persistence*): endpoint URL +
-      identity ride backup/transfer; only the client secret is encrypted and
-      backup-excluded. Setup screen, plus the restore path: detect the missing
-      secret after a restore and ask for exactly that one field with the
-      reason stated.
+- [x] Config store split by sensitivity (SPEC → *Persistence*): endpoint
+      URL + identity in DataStore riding backup/transfer; the client secret
+      Keystore-encrypted in a SharedPreferences file the extraction rules
+      exclude from backup and device transfer. Setup screen (full form with
+      per-field validation, https-only endpoint) plus the restore path:
+      config-without-secret is detected as the restore signature and setup
+      asks for exactly the one missing field with the reason stated; an
+      undecryptable secret degrades to the same ask. Authority fingerprint
+      (SHA-256 over endpoint + identity, length-prefixed) feeds the token
+      cache's authority binding. Domain logic, view model, and both screen
+      states unit/screenshot-tested; the Keystore crypto itself is owed a
+      device check.
 - [x] Token readiness policy (pure Kotlin, unit-tested): at dial time a
       fresh cache connects immediately, an aging cache connects and starts a
       background refresh, and no comfortably valid cache means mint-now with
@@ -239,6 +246,15 @@ Guesses made while drafting the skeleton, each cheap to change:
   `SPEC.md` open question (voicemail / message / forward) is undecided.
   Chosen as the simplest honest behavior; changing it later touches only
   the Function.
+- **The secret is Keystore-AES-GCM in an excluded SharedPreferences file**,
+  not androidx security-crypto (deprecated) or a passphrase KDF. Two layers,
+  one reason each: exclusion keeps it out of backups, Keystore keeps the
+  on-device file ciphertext. Reversible — the `SecretStore` interface hides
+  the mechanism.
+- **The authority fingerprint hashes endpoint + identity, not the secret**:
+  rotating the secret doesn't change who mints, so a still-valid cached
+  token survives a secret fix. Including the secret would only cost an
+  extra mint; one-line change if preferred.
 - **Outbound connect-parameter contract** (`docs/twilio-setup.md` step 6):
   the app passes the dialed number as the `To` parameter, E.164, and the
   Function presents the account's `CALLER_ID`. The obvious shape, but

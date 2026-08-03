@@ -453,6 +453,19 @@ entry, so the app never ships holding a permission it doesn't use.
   backup; re-enter the endpoint secret") — instead of presenting first-run
   setup as if nothing had ever been configured. Inbound registration resumes
   on the next app start after re-entry, per the *Inbound* triggers.
+- **The stored secret is bound to the configuration it was saved for.** The
+  secret's store also records, in the same atomic write, the authority
+  fingerprint (a one-way hash of endpoint + identity). Because the two halves
+  live in separate stores, a save can be torn — by process death or power loss
+  between the two commits — and no write ordering alone can prevent it; the
+  binding makes the tear *detectable*: a secret whose fingerprint doesn't
+  match the current configuration is treated as missing, so the app reports
+  the honest "secret needed" state instead of looking configured while every
+  token mint fails (principle 1: never fail silently). The configuration is
+  written first and the secret — bound to it — last, so an interrupted save
+  can never produce a false "ready" and always keeps the configuration the
+  user just entered: only the one secret field needs re-entering
+  (principle 2: never lose the user's work).
 - **Settings** (theme, notification preferences) are ordinary preferences and may
   be backed up.
 - Twilmo keeps no call history of its own in v1 beyond what the platform call

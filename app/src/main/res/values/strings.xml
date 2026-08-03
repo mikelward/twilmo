@@ -5,4 +5,40 @@
     <string name="home_not_set_up" tools:ignore="MissingTranslation">Not set up</string>
     <!-- TODO: translate -->
     <string name="home_setup_hint" tools:ignore="MissingTranslation">Connect a Twilio number to make and receive calls.</string>
+    <!-- TODO: translate -->
+    <string name="home_status_ready" tools:ignore="MissingTranslation">Ready</string>
+    <!-- TODO: translate -->
+    <string name="home_status_secret_needed" tools:ignore="MissingTranslation">Client secret needed</string>
+    <!-- TODO: translate -->
+    <string name="home_set_up" tools:ignore="MissingTranslation">Set up</string>
+    <!-- TODO: translate -->
+    <string name="setup_title" tools:ignore="MissingTranslation">Set up</string>
+    <!-- TODO: translate -->
+    <string name="setup_endpoint_label" tools:ignore="MissingTranslation">Endpoint URL</string>
+    <!-- TODO: translate -->
+    <string name="setup_identity_label" tools:ignore="MissingTranslation">Identity</string>
+    <!-- TODO: translate -->
+    <string name="setup_secret_label" tools:ignore="MissingTranslation">Client secret</string>
+    <!-- TODO: translate -->
+    <string name="setup_save" tools:ignore="MissingTranslation">Save</string>
+    <!-- TODO: translate -->
+    <string name="setup_error_missing" tools:ignore="MissingTranslation">Required</string>
+    <!-- TODO: translate -->
+    <string name="setup_error_not_https" tools:ignore="MissingTranslation">Must start with https://</string>
+    <!-- TODO: translate -->
+    <string name="setup_error_not_a_url" tools:ignore="MissingTranslation">Not a valid URL</string>
+    <!-- TODO: translate -->
+    <string name="setup_secret_missing_reason" tools:ignore="MissingTranslation">The client secret is missing or does not match this setup. Enter it again.</string>
+    <!-- TODO: translate -->
+    <string name="setup_error_save_failed" tools:ignore="MissingTranslation">Save failed. Try again.</string>
+    <!-- TODO: translate -->
+    <string name="setup_error_load_failed" tools:ignore="MissingTranslation">Could not load your saved settings. Saving now will overwrite them.</string>
+    <!-- TODO: translate -->
+    <string name="setup_retry" tools:ignore="MissingTranslation">Retry</string>
+    <!-- TODO: translate -->
+    <string name="home_status_unavailable" tools:ignore="MissingTranslation">Status unavailable</string>
+    <!-- TODO: translate -->
+    <string name="setup_error_endpoint_userinfo" tools:ignore="MissingTranslation">Must not include a username or password</string>
+    <!-- TODO: translate -->
+    <string name="home_settings_reset" tools:ignore="MissingTranslation">Saved settings could not be read and were reset. Set up again.</string>
 </resources>
