@@ -29,15 +29,33 @@ green.
 
 ## Phase 1 — Twilio side and backend
 
-- [ ] Create the Twilio assets and document the setup in `docs/twilio-setup.md`:
-      a number, an API key, a TwiML App, a Push Credential (FCM service-account
-      key from the new Firebase project). No secrets in the repo — the doc
-      describes, the console holds.
-- [ ] Access-token endpoint (Twilio Functions): mints Voice access tokens for
-      the app's identity, authenticated so only the app can mint (shared-secret
-      header to start; recorded as revisitable).
-- [ ] Inbound routing webhook (TwiML App): `<Dial><Client>` to the identity,
-      with the no-answer behavior from the `SPEC.md` open question once decided.
+- [x] Document the setup in `docs/twilio-setup.md` (number, API key, TwiML
+      App, Push Credential from the Firebase project's FCM service-account
+      key, Functions service, env vars, wiring the number) with the token
+      endpoint's request/response contract pinned. No secrets in the repo —
+      the doc describes, the console holds.
+- [ ] Create the Twilio assets by running the checklist (owner-only: needs
+      the Twilio and Firebase accounts).
+- [x] Access-token endpoint code (`functions/token.js`): mints Voice access
+      tokens for the app's identity with the incoming grant Phase 3's
+      registration needs; public visibility (the app calls it, not Twilio)
+      with shared-secret header auth, constant-time compared; recorded as
+      revisitable in *Decisions needing review*. Handler tests
+      (`functions/*.test.js`, Node's built-in runner) run in CI alongside
+      the Gradle suite.
+- [x] Inbound routing webhook code (`functions/inbound.protected.js`):
+      `<Dial><Client>` to the identity with `answerOnBridge`; protected
+      visibility so the runtime verifies Twilio's signature. No-answer
+      behavior stays the simple default until the `SPEC.md` open question is
+      decided (see *Decisions needing review*). The number's fallback URL is
+      a TwiML Bin (doc step 7) so a Functions outage degrades to an honest
+      announcement, per SPEC → *Backend*.
+- [x] Outbound routing webhook code (`functions/outbound.protected.js`):
+      the TwiML App's voice URL — `<Dial><Number>` on the `To` connect
+      parameter with the account's `CALLER_ID`; a missing `To` ends the leg
+      so the SDK surfaces the connect failure. Handler-tested; the
+      connect-parameter contract is pinned in the doc and consumed by the
+      Phase 2 SDK driver.
 
 ## Phase 2 — Outbound calling
 
@@ -201,6 +219,22 @@ Guesses made while drafting the skeleton, each cheap to change:
 - **CI deploy job deferred to Phase 5** (see Phase 0b): mirroring simmo's
   Firebase/Play pipeline before those accounts exist would ship 500 untested
   workflow lines; the build/test/lint/screenshot jobs land now.
+- **Token endpoint contract** (`docs/twilio-setup.md`): shared-secret header
+  `x-twilmo-secret`, JSON `{token, expiresInSeconds, identity}`, TTL 3600 s.
+  Alternatives were per-install keys or Twilio-signed requests (impossible —
+  the app isn't Twilio). Revisitable until the app's token client ships
+  against it; a longer TTL (up to 24 h) is a one-line change weighed against
+  how long a stolen token stays usable.
+- **Inbound no-answer behavior defaults to a 30 s dial timeout** and
+  Twilio's default hangup (`functions/inbound.protected.js`) while the
+  `SPEC.md` open question (voicemail / message / forward) is undecided.
+  Chosen as the simplest honest behavior; changing it later touches only
+  the Function.
+- **Outbound connect-parameter contract** (`docs/twilio-setup.md` step 6):
+  the app passes the dialed number as the `To` parameter, E.164, and the
+  Function presents the account's `CALLER_ID`. The obvious shape, but
+  recorded because the Phase 2 SDK driver must match it; revisitable until
+  that driver ships.
 
 Resolved (maintainer, 2026-08-02): privacy rules are floors that preserve the
 user's privacy, weighed against functionality, data loss, performance, cost,
