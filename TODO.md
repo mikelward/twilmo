@@ -272,3 +272,15 @@ account plus a number-keyed hand-off intent that dials immediately
 (Google-Voice-style deep link, minus the pre-fill tap), never requiring
 contacts registration entries. Also resolved (maintainer, 2026-08-02): the
 application ID is `app.twilmo`, with simmo's `.debug`/`.dev` suffix scheme.
+
+## Review and merge gates
+
+- [ ] Bring this repository to the fleet's bar — comprehensive automated
+      review, required merge gates, and auto-merge, the same in every
+      repository: the codex-review set (`codex-review.yml`,
+      `codex-review-listener.yml`, `codex-review-check.yml` from
+      mikelward/codex-review; its `docs/CONSUMER.md` has the three
+      load-bearing ruleset settings), a CI gate if there is anything to
+      check, a ruleset on the default branch requiring them plus
+      conversation resolution and up-to-date branches, and the
+      auto-merge setting enabled.
